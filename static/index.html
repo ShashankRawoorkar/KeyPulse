@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KeyPulse — your typing as a brain signal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true">
+  <div class="grid"></div>
+  <svg class="ecg" viewBox="0 0 1400 120" preserveAspectRatio="none"><polyline points="0,60 300,60 330,60 345,20 362,105 380,35 395,60 700,60 730,60 745,15 762,110 780,30 795,60 1100,60 1130,60 1145,25 1162,100 1180,40 1195,60 1400,60"/></svg>
+</div>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-wrap"><svg viewBox="0 0 40 20" class="logo" aria-hidden="true"><polyline points="0,10 10,10 14,2 19,18 24,6 27,10 40,10"/></svg></span>
+    <span>KeyPulse</span>
+    <span id="modelStatus" class="model-status">training model…</span>
+  </div>
+  <div class="profile">
+    <select id="userSelect" aria-label="Profile"></select>
+    <button id="newUserBtn" class="ghost">+ New profile</button>
+    <button id="seedBtn" class="ghost">Load demo data</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <div class="tabs-inner">
+    <span class="tab-indicator" id="tabIndicator"></span>
+    <button class="tab active" data-view="checkin">Check in</button>
+    <button class="tab" data-view="dashboard">Dashboard</button>
+    <button class="tab" data-view="lab">Model Lab</button>
+  </div>
+</nav>
+
+<main>
+  <!-- ============ CHECK-IN ============ -->
+  <section id="view-checkin" class="view">
+    <div id="step-setup" class="card step">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Your typing as a brain signal</p>
+          <h1>Tired, or just <span class="grad-text">overloaded?</span></h1>
+          <p class="lead">Type a short passage, then do a 60-second reaction test. A neural network running in your
+            browser reads the <em>way</em> you type (how long you hold keys, the rhythm between them, how often you
+            hesitate) and separates <b>sleep pressure</b> from <b>mental workload</b>.</p>
+          <div class="chips">
+            <span class="chip">90-second check-in</span>
+            <span class="chip">on-device neural net</span>
+            <span class="chip">explainable</span>
+            <span class="chip">no text stored</span>
+          </div>
+        </div>
+        <div class="keys" aria-hidden="true">
+          <div class="key-row"><span class="keycap" style="--k:0">K</span><span class="keycap" style="--k:1">E</span><span class="keycap" style="--k:2">Y</span></div>
+          <div class="key-row"><span class="keycap" style="--k:3">P</span><span class="keycap" style="--k:4">U</span><span class="keycap" style="--k:5">L</span><span class="keycap" style="--k:6">S</span><span class="keycap" style="--k:7">E</span></div>
+          <svg class="key-trace" viewBox="0 0 330 50" preserveAspectRatio="none">
+            <polyline points="0,25 40,25 52,8 64,42 76,18 88,25 130,25 142,5 154,45 166,15 178,25 220,25 232,10 244,40 256,20 268,25 330,25"/>
+          </svg>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Hours slept last night <span class="muted">(optional)</span>
+          <input id="sleepInput" type="number" min="0" max="16" step="0.5" placeholder="e.g. 7">
+        </label>
+        <label class="check"><input id="pvtToggle" type="checkbox" checked> Include reaction-time test</label>
+        <label>Test length
+          <select id="pvtDuration"><option value="60">60 s</option><option value="30">30 s</option></select>
+        </label>
+      </div>
+      <button id="startBtn" class="primary">Start check-in</button>
+      <p class="privacy">Only timings and key <em>type</em> (letter / space / backspace) leave this page. The text you type is never stored. The model runs on your device.</p>
+      <p id="calibNote" class="note" hidden></p>
+    </div>
+
+    <div id="step-type" class="card step" hidden>
+      <div class="step-head"><span class="step-tag">Step 1 of <span id="stepTotal">2</span></span><h2>Type this passage</h2></div>
+      <p class="muted">Type at your natural pace. Typos are fine; don't stop to make it perfect.</p>
+      <div id="promptBox" class="prompt" aria-live="off"></div>
+      <textarea id="typeArea" rows="3" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+        placeholder="Start typing here…"></textarea>
+      <div class="pulse-wrap">
+        <canvas id="pulseCanvas" height="70"></canvas>
+        <div class="pulse-legend"><span>each bar = one keypress, height = how long you held it</span><span id="liveStats"></span></div>
+      </div>
+      <p id="mobileWarn" class="note" hidden>Phone keyboards don't report real key timings. Use a laptop or desktop keyboard.</p>
+    </div>
+
+    <div id="step-pvt" class="card step" hidden>
+      <div class="step-head"><span class="step-tag">Step 2 of 2</span><h2>Reaction test</h2></div>
+      <p class="muted">When the box turns <b class="red">blue</b>, click it or press <kbd>Space</kbd> as fast as you can. Don't jump the gun.</p>
+      <div id="pvtBox" class="pvt idle" tabindex="0"><span id="pvtText">Click here to begin</span></div>
+      <div class="progress"><div id="pvtProgress"></div></div>
+      <div id="pvtStats" class="muted small"></div>
+    </div>
+
+    <div id="step-result" class="card step" hidden>
+      <div class="result-top">
+        <div class="gauge">
+          <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"/><circle id="gaugeArc" class="arc" cx="60" cy="60" r="52"/></svg>
+          <div class="gauge-text"><span id="scoreNum">–</span><span id="scoreLabel" class="small"></span></div>
+        </div>
+        <div class="result-copy">
+          <p class="eyebrow">Cognitive readiness</p>
+          <h2 id="verdictTitle">–</h2>
+          <p id="verdictText" class="muted"></p>
+          <div id="meters" class="meters" hidden>
+            <div class="meter">
+              <div class="meter-head"><span>Sleepiness</span><b id="kssVal"></b></div>
+              <div class="bar"><div id="kssBar" class="fill sleep"></div></div>
+              <span class="small muted">Karolinska Sleepiness Scale estimate, 1–9</span>
+            </div>
+            <div class="meter">
+              <div class="meter-head"><span>Cognitive load</span><b id="tlxVal"></b></div>
+              <div class="bar"><div id="tlxBar" class="fill load"></div></div>
+              <span class="small muted">NASA-TLX mental demand estimate, 0–100</span>
+            </div>
+          </div>
+          <div id="anomalyBadge" class="badge" hidden></div>
+        </div>
+      </div>
+
+      <div id="shapSection" hidden>
+        <h3>Why this score</h3>
+        <p class="small muted">Exact Shapley values: how many readiness points each signal added or removed compared with you at your normal.</p>
+        <div id="shapChart" class="shap"></div>
+        <p id="modelBadge" class="small muted model-badge"></p>
+      </div>
+
+      <h3>Advice</h3>
+      <ul id="tipsList" class="tips"></ul>
+
+      <details class="raw-details">
+        <summary>Raw signals vs your baseline</summary>
+        <div class="table-wrap"><table id="detailTable">
+          <thead><tr><th>Signal</th><th>What it reflects</th><th>Now</th><th>Your normal</th><th>Shift</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </details>
+      <div class="actions">
+        <button id="againBtn" class="primary">Check in again</button>
+        <button id="toDashBtn" class="ghost">View dashboard</button>
+      </div>
+      <p class="disclaimer">KeyPulse is a wellness signal, not a medical device or diagnosis.</p>
+    </div>
+  </section>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section id="view-dashboard" class="view" hidden>
+    <div id="dashEmpty" class="card" hidden>
+      <h2>No check-ins yet</h2>
+      <p class="muted">Do a check-in, or click <b>Load demo data</b> to see three weeks of example history.</p>
+    </div>
+    <div id="dashContent" hidden>
+      <div id="demoBanner" class="note" hidden>Showing <b>synthetic demo data</b> generated from a sleep-debt fatigue model.</div>
+      <div class="stats">
+        <div class="stat"><span class="stat-label">Latest readiness</span><span id="statLatest" class="stat-val">–</span><span id="statLatestLabel" class="small muted"></span></div>
+        <div class="stat"><span class="stat-label">7-day average</span><span id="statAvg" class="stat-val">–</span></div>
+        <div class="stat"><span class="stat-label">Check-ins</span><span id="statCount" class="stat-val">–</span></div>
+        <div class="stat"><span class="stat-label">Sleep ↔ readiness</span><span id="statR" class="stat-val">–</span><span id="statRNote" class="small muted"></span></div>
+      </div>
+      <div class="card" id="latestCard">
+        <p class="eyebrow">Latest check-in</p>
+        <h2 id="dashVerdict">–</h2>
+        <ul id="dashTips" class="tips"></ul>
+      </div>
+      <div class="card">
+        <h3>Readiness over time <span class="muted small">(bars = hours slept)</span></h3>
+        <div class="chart-box"><canvas id="readinessChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Tired or overloaded? <span class="muted small">(model estimates, 0–100)</span></h3>
+        <div class="chart-box"><canvas id="causeChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="chart-head"><h3>Signal explorer</h3><select id="featureSelect"></select></div>
+        <div class="chart-box"><canvas id="featureChart"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MODEL LAB ============ -->
+  <section id="view-lab" class="view" hidden>
+    <div class="card">
+      <h1>Model Lab</h1>
+      <p class="lead">Everything on this page, from training and cross-validation to explanations, runs <b>in your browser</b>
+        in plain JavaScript (<code>ml.js</code>, no ML libraries). Your keystrokes never need to leave your device.</p>
+      <div class="note">The training data is a <b>simulated study</b>. Its assumptions come from published sleep
+        research and are listed below. The pipeline is built so real check-ins can replace it with no code changes.</div>
+    </div>
+
+    <div class="card">
+      <h3>1 · The data: KeyPulse Hackathon Study (simulated)</h3>
+      <div class="stats compact">
+        <div class="stat"><span class="stat-label">Participants</span><span id="labN" class="stat-val">–</span></div>
+        <div class="stat"><span class="stat-label">Labelled check-ins</span><span id="labRows" class="stat-val">–</span></div>
+        <div class="stat"><span class="stat-label">Hours awake (max)</span><span id="labHours" class="stat-val">–</span></div>
+        <div class="stat"><span class="stat-label">Dual-task check-ins</span><span id="labDual" class="stat-val">–</span></div>
+      </div>
+      <p class="muted small">40 people check in every ~2.5 h through a 34-hour hackathon. ~30% of check-ins are randomly assigned
+        a <b>dual-task</b> (type while counting backwards by 7s). Labels: <b>KSS</b> sleepiness (1–9) and <b>NASA-TLX</b> mental demand (0–100).</p>
+      <div class="chart-box"><canvas id="studyChart"></canvas></div>
+      <details class="raw-details">
+        <summary>Simulation assumptions</summary>
+        <ul class="small">
+          <li><b>Two-process model of sleep regulation</b> (Borbély): sleep pressure builds while awake (τ = 18.2 h) and clears during sleep (τ = 4.2 h), combined with a 24 h circadian rhythm (peak ~18:00, low point ~06:00). That's why you see the 4 am peak and a "second wind" the next afternoon.</li>
+          <li><b>People differ in how badly sleep loss hits them</b> (Van Dongen et al., 2004): each person gets a stable vulnerability factor.</li>
+          <li>Each person has their own typing style (speed, hold time, rhythm), so raw numbers aren't comparable across people.</li>
+          <li>Reaction lapses and keypress steadiness respond most to fatigue. Pauses, rhythm and speed respond most to workload. Caffeine temporarily masks sleepiness. 40% of participants nap.</li>
+          <li>Label noise: KSS ±0.7 points, TLX ±8 points (self-reports are noisy).</li>
+        </ul>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>2 · The pipeline</h3>
+      <div class="pipeline">
+        <div class="pipe-box"><b>Keystrokes + reaction test</b><span>key-down / key-up times only</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box"><b>10 features</b><span>hold time, rhythm, pauses, corrections, speed, lapses…</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box accent"><b>Personal baseline</b><span>z-score vs <i>your</i> normal</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box accent"><b>Neural net</b><span>10 → 24 (tanh) → 2<br>Adam, L2, 150 epochs</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box"><b>Sleepiness + Load</b><span>→ readiness score</span></div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box"><b>Shapley explanations</b><span>exact, 2¹⁰ coalitions</span></div>
+      </div>
+      <p class="small muted">Two models are deployed: the full 10-signal model, and a 7-signal <b>typing-only</b> model used when you skip the reaction test (and for future passive monitoring).</p>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h3>3 · Train &amp; evaluate</h3>
+        <button id="trainBtn" class="primary">Train &amp; evaluate</button>
+      </div>
+      <p class="small muted">5-fold cross-validation <b>grouped by participant</b>, so every score is measured on people the model has never seen.</p>
+      <p id="trainStatus" class="train-status muted">Press the button to train every model from scratch in your browser.</p>
+      <div class="chart-box short"><canvas id="lossChart"></canvas></div>
+      <div class="table-wrap"><table id="resultsTable" class="results">
+        <thead><tr><th>Model</th><th>Inputs</th><th>Sleepiness r</th><th>Load r</th><th>Readiness r</th><th>Readiness MAE</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div id="labFindings" class="findings" hidden></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Predicted vs actual readiness</h3>
+        <p class="small muted">Out-of-fold predictions on unseen participants. Orange = dual-task check-ins.</p>
+        <div class="chart-box"><canvas id="scatterChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>What the model learned</h3>
+        <p class="small muted">Share of each prediction explained by each signal (mean |Shapley|). It discovered on its own which signals mean <i>tired</i> and which mean <i>overloaded</i>.</p>
+        <div class="chart-box"><canvas id="importanceChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Model card</h3>
+      <ul class="small">
+        <li><b>Intended use:</b> personal, self-referenced wellness feedback ("am I off my normal, and why?"). Not a medical device or diagnosis.</li>
+        <li><b>Training data:</b> simulated (see assumptions). Real-world accuracy will be lower. Next step: collect labelled check-ins from real users and retrain with the same pipeline.</li>
+        <li><b>Needs:</b> 2 calibration check-ins per person. Physical keyboards only (phone keyboards hide key timings).</li>
+        <li><b>Known confounds:</b> unfamiliar keyboards, injuries, alcohol/medication, typing in a second language.</li>
+        <li><b>Privacy:</b> only timings and key categories are used. Inference runs on-device.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/chart.umd.min.js"></script>
+<script src="ml.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
